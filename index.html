@@ -346,7 +346,10 @@
             </select>
           </div>
         </div>
-        <button class="btn" style="font-size:11px;padding:8px" onclick="addEmployee()">+ เพิ่มพนักงาน</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn" style="font-size:11px;padding:8px;flex:1" onclick="addEmployee()">+ เพิ่มพนักงาน</button>
+          <button class="btn red" style="font-size:10px;padding:8px" onclick="clearFaceData()" title="ล้างข้อมูลใบหน้าทั้งหมด">🗑 ล้างใบหน้า</button>
+        </div>
       </div>
     </div>
 
@@ -367,12 +370,39 @@
 const THRESHOLD = 0.45; // ยิ่งต่ำ = เข้มงวดมากขึ้น
 const COOLDOWN = 8000;   // ms ระหว่างการบันทึก log
 
-let employees = [
-  { id:'EMP-001', name:'สมชาย ใจดี',    dept:'ผลิต',  present:false, descriptor:null },
-  { id:'EMP-002', name:'วิภา รักงาน',    dept:'QC',    present:false, descriptor:null },
-  { id:'EMP-003', name:'ประเสริฐ มั่นคง', dept:'คลัง', present:false, descriptor:null },
-  { id:'EMP-004', name:'นภา สดใส',       dept:'บัญชี', present:false, descriptor:null },
+const DEFAULT_EMPLOYEES = [
+  { id:'EMP-001', name:'สมชาย ใจดี',    dept:'ผลิต' },
+  { id:'EMP-002', name:'วิภา รักงาน',    dept:'QC'   },
+  { id:'EMP-003', name:'ประเสริฐ มั่นคง', dept:'คลัง' },
+  { id:'EMP-004', name:'นภา สดใส',       dept:'บัญชี' },
 ];
+
+// ==================== LOCAL STORAGE ====================
+function saveEmployees() {
+  // เก็บเฉพาะข้อมูลที่ serialize ได้ (descriptor เป็น Float32Array ต้อง convert)
+  const data = employees.map(e => ({
+    id: e.id, name: e.name, dept: e.dept,
+    descriptor: e.descriptor ? Array.from(e.descriptor) : null
+  }));
+  localStorage.setItem('workscan_employees', JSON.stringify(data));
+}
+
+function loadEmployees() {
+  try {
+    const raw = localStorage.getItem('workscan_employees');
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return data.map(e => ({
+      ...e,
+      present: false,
+      descriptor: e.descriptor ? new Float32Array(e.descriptor) : null
+    }));
+  } catch(e) { return null; }
+}
+
+// โหลดจาก localStorage หรือใช้ค่าเริ่มต้น
+const saved = loadEmployees();
+let employees = saved || DEFAULT_EMPLOYEES.map(e => ({ ...e, present:false, descriptor:null }));
 
 let statIn=0, statOut=0, statDeny=0;
 let logs=[];
@@ -732,6 +762,7 @@ function addEmployee() {
   const id = 'EMP-' + String(employees.length + 1).padStart(3,'0');
   employees.push({ id, name, dept, present:false, descriptor:null });
   document.getElementById('newName').value = '';
+  saveEmployees(); // บันทึกลง localStorage
   renderEmployees();
 }
 
@@ -791,6 +822,15 @@ function addLog(emp, type, dist) {
 
 // ==================== INIT ====================
 renderEmployees();
+
+// ฟังก์ชันล้างข้อมูลใบหน้าทั้งหมด (ถ้าต้องการ)
+function clearFaceData() {
+  if (!confirm('ล้างข้อมูลใบหน้าทั้งหมด?')) return;
+  employees.forEach(e => e.descriptor = null);
+  saveEmployees();
+  renderEmployees();
+  alert('ล้างข้อมูลใบหน้าแล้ว');
+}
 </script>
 </body>
 </html>
