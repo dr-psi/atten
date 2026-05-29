@@ -393,7 +393,7 @@ async function loadModels() {
   document.getElementById('loadingText').textContent = 'LOADING FACE DETECTOR...';
   await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
   document.getElementById('loadingText').textContent = 'LOADING LANDMARK MODEL...';
-  await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+  await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL);
   document.getElementById('loadingText').textContent = 'LOADING RECOGNITION MODEL...';
   await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
 
@@ -470,7 +470,7 @@ async function startDetectionLoop() {
 
     const detections = await faceapi
       .detectAllFaces(video, opts)
-      .withFaceLandmarks()
+      .withFaceLandmarks(true)
       .withFaceDescriptors();
 
     // Mirror detections to match video (scaleX(-1))
