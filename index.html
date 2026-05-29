@@ -74,9 +74,10 @@
   }
 
   #faceCanvas {
-    position:absolute; inset:0;
-    width:100%; height:100%;
+    position:absolute;
+    top:0; left:0;
     transform:scaleX(-1);
+    transform-origin: left top;
   }
 
   .corner { position:absolute; width:22px; height:22px; border-color:var(--accent); border-style:solid; opacity:.7; }
@@ -431,10 +432,29 @@ async function startCamera() {
     video.srcObject = stream;
     await new Promise(r => video.onloadeddata = r);
 
-    // Match canvas to video
+    // Match canvas to display size of video element
     const canvas = document.getElementById('faceCanvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    function syncCanvas() {
+      const rect = video.getBoundingClientRect();
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const scaleX = rect.width / video.videoWidth;
+      const scaleY = rect.height / video.videoHeight;
+      canvas.style.width = video.videoWidth + 'px';
+      canvas.style.height = video.videoHeight + 'px';
+      canvas.style.transform = 'scaleX(-1)';
+      canvas.style.transformOrigin = 'left top';
+      // center it like object-fit:cover
+      const scale = Math.max(scaleX, scaleY);
+      const dispW = video.videoWidth * scale;
+      const dispH = video.videoHeight * scale;
+      canvas.style.left = ((rect.width - dispW) / 2) + 'px';
+      canvas.style.top = ((rect.height - dispH) / 2 ) + 'px';
+      canvas.style.transform = `scaleX(-${scale}) scaleY(${scale})`;
+      canvas.style.transformOrigin = 'left top';
+    }
+    syncCanvas();
+    window.addEventListener('resize', syncCanvas);
 
     document.getElementById('statusText').textContent = 'กล้องทำงาน — SCAN MODE';
     document.getElementById('btnStart').classList.add('active');
@@ -485,57 +505,62 @@ async function startDetectionLoop() {
     // แสดงชื่อบน detection box ตลอดเวลา
     resized.forEach((det, i) => {
       const box = det.detection.box;
-      const mirrorX = dims.width - box.x - box.width;
+      const x = box.x, y = box.y, w = box.width, h = box.height;
       const descriptor = detections[i].descriptor;
       const match = !isRegMode ? findMatch(descriptor) : null;
 
-      // กรอบสี
+      // สีกรอบ
       let boxColor = '#ffe066';
       if (isRegMode) boxColor = '#ffd600';
-      else if (match) boxColor = '#fff';
+      else if (match) boxColor = '#ffffff';
       else boxColor = '#ff4422';
 
-      // วาดกรอบ
+      // วาดกรอบหลัก
       ctx.strokeStyle = boxColor;
       ctx.lineWidth = 2;
-      ctx.strokeRect(mirrorX, box.y, box.width, box.height);
+      ctx.strokeRect(x, y, w, h);
 
       // corner brackets
-      const cs = 16;
-      ctx.lineWidth = 3;
-      [[mirrorX,box.y],[mirrorX+box.width-cs,box.y],[mirrorX,box.y+box.height-cs],[mirrorX+box.width-cs,box.y+box.height-cs]].forEach(([x,y],ci) => {
-        ctx.beginPath();
-        if(ci===0){ctx.moveTo(x+cs,y);ctx.lineTo(x,y);ctx.lineTo(x,y+cs);}
-        if(ci===1){ctx.moveTo(x,y);ctx.lineTo(x+cs,y);ctx.lineTo(x+cs,y+cs);}
-        if(ci===2){ctx.moveTo(x,y+cs);ctx.lineTo(x,y);ctx.lineTo(x+cs,y);}  // fixed
-        if(ci===3){ctx.moveTo(x,y+cs);ctx.lineTo(x+cs,y+cs);ctx.lineTo(x+cs,y);}
-        ctx.strokeStyle = boxColor;
-        ctx.stroke();
-      });
+      const cs = 18, lw = 3;
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = boxColor;
+      [ [x,y,1,0,0,1], [x+w,y,-1,0,0,1], [x,y+h,1,0,0,-1], [x+w,y+h,-1,0,0,-1] ]
+        .forEach(([px,py,dx1,dy1,dx2,dy2]) => {
+          ctx.beginPath();
+          ctx.moveTo(px+dx1*cs, py+dy1*cs);
+          ctx.lineTo(px, py);
+          ctx.lineTo(px+dx2*cs, py+dy2*cs);
+          ctx.stroke();
+        });
 
-      // ชื่อบน box
-      const label = isRegMode ? '[ ลงทะเบียน ]'
-        : match ? match.emp.name + '  ' + Math.round((1-match.distance)*100) + '%'
-        : '[ ไม่รู้จัก ]';
+      // label text
+      const label = isRegMode
+        ? '⬤  ลงทะเบียนใบหน้า'
+        : match
+          ? match.emp.name + '   ' + Math.round((1 - match.distance) * 100) + '%'
+          : '⚠  ไม่รู้จัก';
 
-      const conf = Math.round(det.detection.score * 100);
+      ctx.font = 'bold 14px "Share Tech Mono", monospace';
+      const tw = ctx.measureText(label).width + 16;
+      const th = 22;
 
       // พื้นหลัง label
-      ctx.font = 'bold 13px "Share Tech Mono", monospace';
-      const tw = ctx.measureText(label).width;
-      ctx.fillStyle = match ? 'rgba(0,0,0,0.7)' : 'rgba(200,20,0,0.75)';
-      ctx.fillRect(mirrorX, box.y - 24, tw + 12, 22);
+      ctx.fillStyle = match ? 'rgba(0,0,0,0.75)' : isRegMode ? 'rgba(120,80,0,0.85)' : 'rgba(160,10,0,0.8)';
+      ctx.fillRect(x, y - th - 2, tw, th);
 
-      // ข้อความ
+      // ข้อความ label
       ctx.fillStyle = boxColor;
-      ctx.fillText(label, mirrorX + 6, box.y - 7);
+      ctx.fillText(label, x + 8, y - 7);
 
-      // dept ใต้กรอบ
+      // แถวสอง: แผนก + ID
       if (match && !isRegMode) {
-        const dept = match.emp.dept + ' • ' + match.emp.id;
+        const sub = match.emp.id + '  •  ' + match.emp.dept + (match.emp.present ? '  ✓ เข้างานแล้ว' : '');
         ctx.font = '11px "Share Tech Mono", monospace';
-        ctx.fillStyle = 'rgba(255,255,200,0.8)';
-        ctx.fillText(dept, mirrorX + 4, box.y + box.height + 16);
+        const sw = ctx.measureText(sub).width + 14;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(x, y + h + 2, sw, 18);
+        ctx.fillStyle = 'rgba(255,220,150,0.9)';
+        ctx.fillText(sub, x + 7, y + h + 15);
       }
     });
 
