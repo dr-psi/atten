@@ -68,16 +68,18 @@
   }
 
   #video {
+    position:absolute; top:0; left:0;
     width:100%; height:100%;
     object-fit:cover; display:block;
     transform:scaleX(-1);
+    z-index:1;
   }
 
   #faceCanvas {
-    position:absolute;
-    top:0; left:0;
+    position:absolute; top:0; left:0;
     width:100%; height:100%;
     pointer-events:none;
+    z-index:2;
   }
 
   .corner { position:absolute; width:22px; height:22px; border-color:var(--accent); border-style:solid; opacity:.7; }
@@ -432,7 +434,6 @@ async function startCamera() {
     video.srcObject = stream;
     await new Promise(r => video.onloadeddata = r);
 
-    // Canvas ใช้ display size จริงของ video element
     const canvas = document.getElementById('faceCanvas');
     function syncCanvas() {
       canvas.width  = video.clientWidth;
@@ -483,16 +484,27 @@ async function startDetectionLoop() {
       .withFaceLandmarks(true)
       .withFaceDescriptors();
 
-    // Resize result ให้ตรงกับ display size จริง + mirror X สำหรับ scaleX(-1)
-    const displaySize = { width: canvas.width, height: canvas.height };
-    const resized = faceapi.resizeResults(detections, displaySize);
+    // คำนวณ object-fit:cover: หา scale และ offset
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const dw = canvas.width,    dh = canvas.height;
+    const scale = Math.max(dw / vw, dh / vh);
+    const offX = (dw - vw * scale) / 2;
+    const offY = (dh - vh * scale) / 2;
+
+    // resize result ตาม video resolution จริง
+    const resized = faceapi.resizeResults(detections, { width: vw, height: vh });
 
     // แสดงชื่อบน detection box ตลอดเวลา
     resized.forEach((det, i) => {
       const box = det.detection.box;
-      // Mirror X เพราะ video ใช้ scaleX(-1)
-      const rawX = displaySize.width - box.x - box.width;
-      const x = rawX, y = box.y, w = box.width, h = box.height;
+      // แปลงพิกัดจาก video resolution → display + mirror X
+      const sx = box.x * scale + offX;
+      const sy = box.y * scale + offY;
+      const sw = box.width  * scale;
+      const sh = box.height * scale;
+      // mirror X (video ใช้ scaleX(-1))
+      const x = dw - sx - sw;
+      const y = sy, w = sw, h = sh;
       const descriptor = detections[i].descriptor;
       const match = !isRegMode ? findMatch(descriptor) : null;
 
