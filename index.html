@@ -70,8 +70,8 @@
   #video {
     position:absolute; top:0; left:0;
     width:100%; height:100%;
-    object-fit:cover; display:block;
-    transform:scaleX(-1);
+    object-fit:cover;
+    opacity:0;
     z-index:1;
   }
 
@@ -80,6 +80,7 @@
     width:100%; height:100%;
     pointer-events:none;
     z-index:2;
+    background:transparent;
   }
 
   .corner { position:absolute; width:22px; height:22px; border-color:var(--accent); border-style:solid; opacity:.7; }
@@ -477,26 +478,33 @@ async function startDetectionLoop() {
     if (!stream) return;
     if (video.readyState < 2) { requestAnimationFrame(loop); return; }
 
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // sync canvas size กับ wrapper จริง
+    const wrapper = document.getElementById('camWrapper');
+    const dw = wrapper.clientWidth;
+    const dh = wrapper.clientHeight;
+    if (canvas.width !== dw || canvas.height !== dh) {
+      canvas.width = dw;
+      canvas.height = dh;
+    }
+
+    // วาด video แบบ mirror (scaleX -1) ลงบน canvas โดยตรง
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const scale = Math.max(dw / vw, dh / vh);
+    const fw = vw * scale, fh = vh * scale;
+    const offX = (dw - fw) / 2;
+    const offY = (dh - fh) / 2;
+
+    ctx.clearRect(0, 0, dw, dh);
+    ctx.save();
+    ctx.translate(dw, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, dw - offX - fw, offY, fw, fh);
+    ctx.restore();
 
     const detections = await faceapi
       .detectAllFaces(video, opts)
       .withFaceLandmarks(true)
       .withFaceDescriptors();
-
-    // อ่านขนาด display จริงทุก frame
-    const vw = video.videoWidth, vh = video.videoHeight;
-    const rect = video.getBoundingClientRect();
-    const dw = rect.width, dh = rect.height;
-    // sync canvas ให้ตรง
-    if (canvas.width !== Math.round(dw) || canvas.height !== Math.round(dh)) {
-      canvas.width  = Math.round(dw);
-      canvas.height = Math.round(dh);
-    }
-    // object-fit:cover scale และ offset
-    const scale = Math.max(dw / vw, dh / vh);
-    const offX = (dw - vw * scale) / 2;
-    const offY = (dh - vh * scale) / 2;
 
     // resize result ตาม video resolution จริง
     const resized = faceapi.resizeResults(detections, { width: vw, height: vh });
@@ -504,14 +512,12 @@ async function startDetectionLoop() {
     // แสดงชื่อบน detection box ตลอดเวลา
     resized.forEach((det, i) => {
       const box = det.detection.box;
-      // แปลงพิกัดจาก video resolution → display + mirror X
+      // แปลงพิกัดจาก video coords → display coords (mirror แล้วใน drawImage)
       const sx = box.x * scale + offX;
       const sy = box.y * scale + offY;
       const sw = box.width  * scale;
       const sh = box.height * scale;
-      // mirror X (video ใช้ scaleX(-1))
-      const x = dw - sx - sw;
-      const y = sy, w = sw, h = sh;
+      const x = sx, y = sy, w = sw, h = sh;
       const descriptor = detections[i].descriptor;
       const match = !isRegMode ? findMatch(descriptor) : null;
 
