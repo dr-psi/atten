@@ -76,8 +76,8 @@
   #faceCanvas {
     position:absolute;
     top:0; left:0;
-    transform:scaleX(-1);
-    transform-origin: left top;
+    width:100%; height:100%;
+    pointer-events:none;
   }
 
   .corner { position:absolute; width:22px; height:22px; border-color:var(--accent); border-style:solid; opacity:.7; }
@@ -432,26 +432,11 @@ async function startCamera() {
     video.srcObject = stream;
     await new Promise(r => video.onloadeddata = r);
 
-    // Match canvas to display size of video element
+    // Canvas ใช้ display size จริงของ video element
     const canvas = document.getElementById('faceCanvas');
     function syncCanvas() {
-      const rect = video.getBoundingClientRect();
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const scaleX = rect.width / video.videoWidth;
-      const scaleY = rect.height / video.videoHeight;
-      canvas.style.width = video.videoWidth + 'px';
-      canvas.style.height = video.videoHeight + 'px';
-      canvas.style.transform = 'scaleX(-1)';
-      canvas.style.transformOrigin = 'left top';
-      // center it like object-fit:cover
-      const scale = Math.max(scaleX, scaleY);
-      const dispW = video.videoWidth * scale;
-      const dispH = video.videoHeight * scale;
-      canvas.style.left = ((rect.width - dispW) / 2) + 'px';
-      canvas.style.top = ((rect.height - dispH) / 2 ) + 'px';
-      canvas.style.transform = `scaleX(-${scale}) scaleY(${scale})`;
-      canvas.style.transformOrigin = 'left top';
+      canvas.width  = video.clientWidth;
+      canvas.height = video.clientHeight;
     }
     syncCanvas();
     window.addEventListener('resize', syncCanvas);
@@ -498,14 +483,16 @@ async function startDetectionLoop() {
       .withFaceLandmarks(true)
       .withFaceDescriptors();
 
-    // Mirror detections to match video (scaleX(-1))
-    const dims = { width: video.videoWidth, height: video.videoHeight };
-    const resized = faceapi.resizeResults(detections, dims);
+    // Resize result ให้ตรงกับ display size จริง + mirror X สำหรับ scaleX(-1)
+    const displaySize = { width: canvas.width, height: canvas.height };
+    const resized = faceapi.resizeResults(detections, displaySize);
 
     // แสดงชื่อบน detection box ตลอดเวลา
     resized.forEach((det, i) => {
       const box = det.detection.box;
-      const x = box.x, y = box.y, w = box.width, h = box.height;
+      // Mirror X เพราะ video ใช้ scaleX(-1)
+      const rawX = displaySize.width - box.x - box.width;
+      const x = rawX, y = box.y, w = box.width, h = box.height;
       const descriptor = detections[i].descriptor;
       const match = !isRegMode ? findMatch(descriptor) : null;
 
