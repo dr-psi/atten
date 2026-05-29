@@ -484,9 +484,16 @@ async function startDetectionLoop() {
       .withFaceLandmarks(true)
       .withFaceDescriptors();
 
-    // คำนวณ object-fit:cover: หา scale และ offset
+    // อ่านขนาด display จริงทุก frame
     const vw = video.videoWidth, vh = video.videoHeight;
-    const dw = canvas.width,    dh = canvas.height;
+    const rect = video.getBoundingClientRect();
+    const dw = rect.width, dh = rect.height;
+    // sync canvas ให้ตรง
+    if (canvas.width !== Math.round(dw) || canvas.height !== Math.round(dh)) {
+      canvas.width  = Math.round(dw);
+      canvas.height = Math.round(dh);
+    }
+    // object-fit:cover scale และ offset
     const scale = Math.max(dw / vw, dh / vh);
     const offX = (dw - vw * scale) / 2;
     const offY = (dh - vh * scale) / 2;
