@@ -363,7 +363,7 @@
 <script>
 // ==================== STATE ====================
 const THRESHOLD = 0.45; // ยิ่งต่ำ = เข้มงวดมากขึ้น
-const COOLDOWN = 5000;   // ms ระหว่าง detection
+const COOLDOWN = 8000;   // ms ระหว่างการบันทึก log
 
 let employees = [
   { id:'EMP-001', name:'สมชาย ใจดี',    dept:'ผลิต',  present:false, descriptor:null },
@@ -482,75 +482,109 @@ async function startDetectionLoop() {
     const dims = { width: video.videoWidth, height: video.videoHeight };
     const resized = faceapi.resizeResults(detections, dims);
 
-    resized.forEach(det => {
+    // แสดงชื่อบน detection box ตลอดเวลา
+    resized.forEach((det, i) => {
       const box = det.detection.box;
-      // Mirror X for display
       const mirrorX = dims.width - box.x - box.width;
+      const descriptor = detections[i].descriptor;
+      const match = !isRegMode ? findMatch(descriptor) : null;
 
-      ctx.strokeStyle = isRegMode ? '#ffd600' : '#00ff88';
+      // กรอบสี
+      let boxColor = '#ffe066';
+      if (isRegMode) boxColor = '#ffd600';
+      else if (match) boxColor = '#fff';
+      else boxColor = '#ff4422';
+
+      // วาดกรอบ
+      ctx.strokeStyle = boxColor;
       ctx.lineWidth = 2;
       ctx.strokeRect(mirrorX, box.y, box.width, box.height);
 
-      ctx.fillStyle = isRegMode ? '#ffd600' : '#00ff88';
-      ctx.font = 'bold 12px Share Tech Mono, monospace';
-      ctx.fillText(
-        isRegMode ? '[ ลงทะเบียน ]' : '[ สแกน ]',
-        mirrorX, box.y - 8
-      );
+      // corner brackets
+      const cs = 16;
+      ctx.lineWidth = 3;
+      [[mirrorX,box.y],[mirrorX+box.width-cs,box.y],[mirrorX,box.y+box.height-cs],[mirrorX+box.width-cs,box.y+box.height-cs]].forEach(([x,y],ci) => {
+        ctx.beginPath();
+        if(ci===0){ctx.moveTo(x+cs,y);ctx.lineTo(x,y);ctx.lineTo(x,y+cs);}
+        if(ci===1){ctx.moveTo(x,y);ctx.lineTo(x+cs,y);ctx.lineTo(x+cs,y+cs);}
+        if(ci===2){ctx.moveTo(x,y+cs);ctx.lineTo(x,y);ctx.lineTo(x+cs,y);}  // fixed
+        if(ci===3){ctx.moveTo(x,y+cs);ctx.lineTo(x+cs,y+cs);ctx.lineTo(x+cs,y);}
+        ctx.strokeStyle = boxColor;
+        ctx.stroke();
+      });
+
+      // ชื่อบน box
+      const label = isRegMode ? '[ ลงทะเบียน ]'
+        : match ? match.emp.name + '  ' + Math.round((1-match.distance)*100) + '%'
+        : '[ ไม่รู้จัก ]';
+
+      const conf = Math.round(det.detection.score * 100);
+
+      // พื้นหลัง label
+      ctx.font = 'bold 13px "Share Tech Mono", monospace';
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = match ? 'rgba(0,0,0,0.7)' : 'rgba(200,20,0,0.75)';
+      ctx.fillRect(mirrorX, box.y - 24, tw + 12, 22);
+
+      // ข้อความ
+      ctx.fillStyle = boxColor;
+      ctx.fillText(label, mirrorX + 6, box.y - 7);
+
+      // dept ใต้กรอบ
+      if (match && !isRegMode) {
+        const dept = match.emp.dept + ' • ' + match.emp.id;
+        ctx.font = '11px "Share Tech Mono", monospace';
+        ctx.fillStyle = 'rgba(255,255,200,0.8)';
+        ctx.fillText(dept, mirrorX + 4, box.y + box.height + 16);
+      }
     });
 
     const now = Date.now();
 
-    if (detections.length > 0 && !detectRunning) {
+    // บันทึก log (มี cooldown) แยกจากการแสดงชื่อ
+    if (detections.length > 0 && !detectRunning && !isRegMode && (now - lastDetect) > COOLDOWN) {
       const descriptor = detections[0].descriptor;
+      const match = findMatch(descriptor);
+      detectRunning = true;
+      lastDetect = now;
 
-      if (isRegMode && regTarget) {
-        // === REGISTER MODE ===
-        detectRunning = true;
-        regTarget.descriptor = descriptor;
-        showAlert('register', regTarget, 100);
-        isRegMode = false;
-        regTarget = null;
-        updateModeBadge();
-        renderEmployees();
-        setTimeout(() => { detectRunning = false; }, 2000);
+      const hour = new Date().getHours();
+      const isAfter17 = hour >= 17;
 
-      } else if (!isRegMode && (now - lastDetect) > COOLDOWN) {
-        // === SCAN MODE ===
-        const match = findMatch(descriptor);
-        detectRunning = true;
-        lastDetect = now;
-
-        const hour = new Date().getHours();
-        const isAfter17 = hour >= 17;
-
-        if (match) {
-          const emp = match.emp;
-          if (isAfter17) {
-            if (emp.present) {
-              emp.present = false;
-              showAlert('out', emp, match.distance);
-              addLog(emp, 'out', match.distance);
-              renderEmployees();
-            } else {
-              showAlert('seen', emp, match.distance);
-            }
-          } else {
-            if (!emp.present) {
-              emp.present = true;
-              showAlert('in', emp, match.distance);
-              addLog(emp, 'in', match.distance);
-              renderEmployees();
-            } else {
-              showAlert('seen', emp, match.distance);
-            }
+      if (match) {
+        const emp = match.emp;
+        if (isAfter17) {
+          if (emp.present) {
+            emp.present = false;
+            showAlert('out', emp, match.distance);
+            addLog(emp, 'out', match.distance);
+            renderEmployees();
           }
         } else {
-          showAlert('deny', null, 0);
-          addLog(null, 'deny', 0);
+          if (!emp.present) {
+            emp.present = true;
+            showAlert('in', emp, match.distance);
+            addLog(emp, 'in', match.distance);
+            renderEmployees();
+          }
         }
-        setTimeout(() => { detectRunning = false; }, 3000);
+      } else {
+        addLog(null, 'deny', 0);
       }
+      setTimeout(() => { detectRunning = false; }, 3000);
+    }
+
+    // register mode บันทึกใบหน้า
+    if (detections.length > 0 && !detectRunning && isRegMode && regTarget) {
+      const descriptor = detections[0].descriptor;
+      detectRunning = true;
+      regTarget.descriptor = descriptor;
+      showAlert('register', regTarget, 100);
+      isRegMode = false;
+      regTarget = null;
+      updateModeBadge();
+      renderEmployees();
+      setTimeout(() => { detectRunning = false; }, 2000);
     }
 
     requestAnimationFrame(loop);
